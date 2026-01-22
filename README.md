@@ -27,6 +27,7 @@ Skills are domain-specific instruction sets that extend Amp's capabilities. When
 - **prd** - Generate Product Requirements Documents
 - **frontend-design** - Create distinctive, production-grade interfaces
 - **dev-browser** - Browser automation with persistent page state
+- **stagehand** - AI-powered browser automation with natural language actions
 
 ### Document Handling
 - **pdf** - PDF manipulation (extract, create, merge, split, forms)
