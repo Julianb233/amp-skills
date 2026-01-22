@@ -2,6 +2,13 @@
 dev-browser/profiles/
 dev-browser/tmp/
 
+# Environment files with secrets
+.env
+**/.env
+
+# Stagehand temp files
+stagehand/tmp/
+
 # Node modules
 node_modules/
 **/node_modules/

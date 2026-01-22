@@ -1,11 +1,29 @@
 ---
 name: stagehand
-description: AI-powered browser automation using Stagehand SDK. Use when users need intelligent web automation that adapts to dynamic elements, extracts structured data, or performs multi-step workflows. Trigger phrases include "test the UI", "extract data from page", "fill this form intelligently", "automate the checkout flow", "run UAT tests", or any request for AI-guided browser interaction.
+description: AI-powered browser automation using Stagehand SDK with Google Gemini (preferred LLM). Use when users need intelligent web automation that adapts to dynamic elements, extracts structured data, or performs multi-step workflows. Trigger phrases include "test the UI", "extract data from page", "fill this form intelligently", "automate the checkout flow", "run UAT tests", or any request for AI-guided browser interaction.
 ---
 
 # Stagehand: AI Browser Automation
 
 Stagehand is an AI-powered browser automation framework by Browserbase. Unlike traditional selectors, it uses natural language to find elements and adapts automatically when websites change.
+
+**Preferred LLM: Google Gemini** - This skill is configured to use `gemini-2.0-flash` as the default model for browser-based AI tasks due to its speed and multimodal capabilities.
+
+## Quick Start
+
+```bash
+# Navigate to skill directory
+cd /opt/agency-workspace/skills/stagehand
+
+# Google Gemini is pre-configured in .env
+# API key is already set up
+
+# Run the setup (installs deps + Chromium)
+./server.sh
+
+# Run a task
+npx tsx scripts/run-task.ts
+```
 
 ## When to Use Stagehand vs Dev Browser
 
@@ -18,17 +36,29 @@ Stagehand is an AI-powered browser automation framework by Browserbase. Unlike t
 | Low-level control | ⚠️ Less precise | ✅ Full Playwright |
 | Speed-critical | ⚠️ AI latency | ✅ Direct selectors |
 
-## Setup
+## Environment Variables
+
+The `.env` file is pre-configured with Google Gemini (preferred):
 
 ```bash
-npm install @anthropic-ai/stagehand zod
+# Google Gemini API key - PREFERRED for browser-based AI tasks
+GOOGLE_API_KEY=AIzaSyCUd8UQkMytdiWKLtbZhYp-6ydQpylu1GE
+
+# Run headless (default: false, set true for CI)
+HEADLESS=false
+
+# Optional: Anthropic API key (alternative to Gemini)
+# ANTHROPIC_API_KEY=sk-ant-...
+
+# Optional: Browserbase for cloud browser infrastructure
+# BROWSERBASE_API_KEY=bb_...
+# BROWSERBASE_PROJECT_ID=...
 ```
 
-**Environment variables:**
-```bash
-ANTHROPIC_API_KEY=your_key  # Required for Claude-powered actions
-BROWSERBASE_API_KEY=your_key # Optional: Cloud browser infrastructure
-```
+### Why Gemini for Browser Automation?
+- **Speed**: `gemini-2.0-flash` is optimized for fast responses
+- **Multimodal**: Native vision capabilities for understanding page layouts
+- **Cost-effective**: Lower cost per token for high-volume automation
 
 ## Core APIs
 
@@ -37,19 +67,29 @@ BROWSERBASE_API_KEY=your_key # Optional: Cloud browser infrastructure
 Execute browser actions with natural language:
 
 ```typescript
-import Stagehand from "@anthropic-ai/stagehand";
+import { Stagehand } from "@browserbasehq/stagehand";
+import "dotenv/config";
 
-const stagehand = new Stagehand();
+const stagehand = new Stagehand({
+  env: "LOCAL",  // or "BROWSERBASE"
+  headless: false,
+  modelName: "gemini-2.0-flash",  // Preferred LLM
+  modelClientOptions: {
+    apiKey: process.env.GOOGLE_API_KEY,
+  },
+});
 await stagehand.init();
 
-const page = stagehand.context.pages()[0];
+const page = stagehand.page;
 await page.goto("https://example.com");
 
 // Natural language - AI finds the right elements
-await stagehand.act("click the login button");
-await stagehand.act("fill in the email field with test@example.com");
-await stagehand.act("select 'Monthly' from the billing dropdown");
-await stagehand.act("submit the form");
+await stagehand.act({ action: "click the login button" });
+await stagehand.act({ action: "fill in the email field with test@example.com" });
+await stagehand.act({ action: "select 'Monthly' from the billing dropdown" });
+await stagehand.act({ action: "submit the form" });
+
+await stagehand.close();
 ```
 
 ### 2. extract() - Structured Data Extraction
@@ -59,17 +99,15 @@ Extract data with Zod schema validation:
 ```typescript
 import { z } from "zod";
 
-const productSchema = z.object({
-  name: z.string().describe("Product name"),
-  price: z.number().describe("Price in dollars, ignore currency"),
-  inStock: z.boolean().describe("Whether item is available"),
-  reviews: z.number().describe("Number of customer reviews"),
+const product = await stagehand.extract({
+  instruction: "extract the main product details",
+  schema: z.object({
+    name: z.string().describe("Product name"),
+    price: z.number().describe("Price in dollars, ignore currency"),
+    inStock: z.boolean().describe("Whether item is available"),
+    reviews: z.number().describe("Number of customer reviews"),
+  }),
 });
-
-const product = await stagehand.extract(
-  "extract the main product details",
-  productSchema
-);
 // { name: "Widget Pro", price: 29.99, inStock: true, reviews: 128 }
 ```
 
@@ -83,11 +121,11 @@ const product = await stagehand.extract(
 Find available actions on a page:
 
 ```typescript
-const actions = await stagehand.observe("find all form submission buttons");
-// Returns array of potential actions with descriptions
+const actions = await stagehand.observe();
+console.log("Available actions:", actions);
 
 // Then execute one
-await stagehand.act(actions[0]);
+await stagehand.act({ action: actions[0].description });
 ```
 
 ### 4. agent() - Autonomous Workflows
@@ -96,12 +134,66 @@ Let AI handle complex multi-step tasks:
 
 ```typescript
 const agent = stagehand.agent({
-  model: "claude-sonnet-4-20250514",
+  modelName: "gemini-2.0-flash",  // Preferred LLM
+  modelClientOptions: {
+    apiKey: process.env.GOOGLE_API_KEY,
+  },
 });
 
-await agent.execute(
-  "Log into the admin panel, navigate to settings, enable dark mode, and save"
-);
+const result = await agent.execute({
+  instruction: "Log into the admin panel, navigate to settings, enable dark mode, and save",
+});
+```
+
+## Running Scripts
+
+### Inline Scripts (Recommended for quick tasks)
+
+```bash
+cd /opt/agency-workspace/skills/stagehand && npx tsx <<'EOF'
+import { Stagehand } from "@browserbasehq/stagehand";
+import { z } from "zod";
+import "dotenv/config";
+
+const stagehand = new Stagehand({
+  env: "LOCAL",
+  headless: false,
+  modelName: "gemini-2.0-flash",
+  modelClientOptions: { apiKey: process.env.GOOGLE_API_KEY },
+});
+await stagehand.init();
+
+try {
+  await stagehand.page.goto("https://example.com");
+
+  const data = await stagehand.extract({
+    instruction: "extract the page title and main heading",
+    schema: z.object({
+      title: z.string(),
+      heading: z.string(),
+    }),
+  });
+
+  console.log("Result:", data);
+} finally {
+  await stagehand.close();
+}
+EOF
+```
+
+### Using Example Scripts
+
+```bash
+cd /opt/agency-workspace/skills/stagehand
+
+# Extract data from a page
+npx tsx scripts/example-extract.ts https://news.ycombinator.com
+
+# Fill a form with natural language
+npx tsx scripts/example-form.ts
+
+# Run an autonomous agent task
+npx tsx scripts/example-agent.ts
 ```
 
 ## Common Patterns
@@ -110,29 +202,33 @@ await agent.execute(
 
 ```typescript
 async function testCheckoutFlow() {
-  const stagehand = new Stagehand({ headless: true });
+  const stagehand = new Stagehand({
+    env: "LOCAL",
+    headless: true,
+    modelName: "gemini-2.0-flash",
+    modelClientOptions: { apiKey: process.env.GOOGLE_API_KEY },
+  });
   await stagehand.init();
-  const page = stagehand.context.pages()[0];
 
   try {
-    await page.goto("https://myshop.com/products/widget");
+    await stagehand.page.goto("https://myshop.com/products/widget");
 
     // Add to cart
-    await stagehand.act("click Add to Cart button");
-    await stagehand.act("click View Cart or checkout");
+    await stagehand.act({ action: "click Add to Cart button" });
+    await stagehand.act({ action: "click View Cart or checkout" });
 
     // Verify cart state
-    const cart = await stagehand.extract(
-      "extract cart contents",
-      z.object({
+    const cart = await stagehand.extract({
+      instruction: "extract cart contents",
+      schema: z.object({
         items: z.array(z.object({
           name: z.string(),
           quantity: z.number(),
           price: z.number(),
         })),
         total: z.number(),
-      })
-    );
+      }),
+    });
 
     if (cart.items.length > 0 && cart.total > 0) {
       console.log("✅ PASS: Checkout flow working");
@@ -147,35 +243,21 @@ async function testCheckoutFlow() {
 }
 ```
 
-### Form Filling
-
-```typescript
-await page.goto("https://example.com/signup");
-
-// AI handles various field types intelligently
-await stagehand.act("fill first name with John");
-await stagehand.act("fill last name with Smith");
-await stagehand.act("fill email with john@example.com");
-await stagehand.act("select United States from country dropdown");
-await stagehand.act("check the terms and conditions checkbox");
-await stagehand.act("click the Submit button");
-```
-
 ### Data Scraping
 
 ```typescript
-await page.goto("https://news.ycombinator.com");
+await stagehand.page.goto("https://news.ycombinator.com");
 
-const articles = await stagehand.extract(
-  "extract all articles on the front page",
-  z.array(z.object({
+const articles = await stagehand.extract({
+  instruction: "extract all articles on the front page",
+  schema: z.array(z.object({
     title: z.string(),
     url: z.string(),
     points: z.number(),
     comments: z.number(),
     author: z.string(),
-  }))
-);
+  })),
+});
 ```
 
 ### Hybrid AI + Selectors
@@ -184,34 +266,35 @@ Combine AI flexibility with selector precision:
 
 ```typescript
 // Use AI for dynamic elements
-await stagehand.act("close any popup or modal that appears");
+await stagehand.act({ action: "close any popup or modal that appears" });
 
 // Use selectors for known, stable elements
-await page.click('[data-testid="submit-button"]');
+await stagehand.page.click('[data-testid="submit-button"]');
 
 // Use AI to verify state
-const success = await stagehand.extract(
-  "check if success message is displayed",
-  z.object({ hasSuccess: z.boolean(), message: z.string().optional() })
-);
+const success = await stagehand.extract({
+  instruction: "check if success message is displayed",
+  schema: z.object({
+    hasSuccess: z.boolean(),
+    message: z.string().optional()
+  }),
+});
 ```
 
 ## Error Handling
 
 ```typescript
 try {
-  await stagehand.act("click the non-existent button");
+  await stagehand.act({ action: "click the non-existent button" });
 } catch (error) {
   console.log("Action failed:", error.message);
 
   // Discover alternatives
-  const alternatives = await stagehand.observe("find clickable elements");
-  console.log("Available:", alternatives);
+  const alternatives = await stagehand.observe();
+  console.log("Available actions:", alternatives);
 
-  // Try alternative approach
-  if (alternatives.length > 0) {
-    await stagehand.act(alternatives[0]);
-  }
+  // Save debug screenshot
+  await stagehand.page.screenshot({ path: "tmp/error.png" });
 }
 ```
 
@@ -222,49 +305,46 @@ try {
    - Repeat runs: ~50ms (cached selector)
 
 2. **Batch extractions**: Extract multiple fields in one call
-3. **Use headless mode** in CI: `new Stagehand({ headless: true })`
+3. **Use headless mode** in CI: `HEADLESS=true`
 4. **Combine with selectors** when you know the element
 
-## Script Template
+## Browserbase Cloud Browsers
+
+For running in CI/CD or when you need:
+- Scalable browser infrastructure
+- Residential proxies
+- Session recording
+- Anti-bot features
 
 ```typescript
-// scripts/stagehand-task.ts
-import Stagehand from "@anthropic-ai/stagehand";
-import { z } from "zod";
-
-async function main() {
-  const stagehand = new Stagehand({
-    env: "LOCAL",
-    headless: process.env.CI === "true",
-  });
-
-  await stagehand.init();
-  const page = stagehand.context.pages()[0];
-
-  try {
-    await page.goto("https://example.com");
-
-    // Your automation here
-    await stagehand.act("...");
-    const data = await stagehand.extract("...", z.object({ /* ... */ }));
-
-    console.log("Result:", data);
-  } catch (error) {
-    console.error("Failed:", error.message);
-    await page.screenshot({ path: "error.png" });
-    throw error;
-  } finally {
-    await stagehand.close();
-  }
-}
-
-main();
+const stagehand = new Stagehand({
+  env: "BROWSERBASE",  // Uses cloud browser
+  headless: true,
+});
 ```
 
-Run with: `npx tsx scripts/stagehand-task.ts`
+Requires `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID` environment variables.
+
+## File Structure
+
+```
+/opt/agency-workspace/skills/stagehand/
+├── package.json          # Dependencies
+├── tsconfig.json         # TypeScript config
+├── server.sh             # Setup script
+├── .env.example          # Environment template
+├── src/
+│   └── client.ts         # Reusable client helpers
+├── scripts/
+│   ├── run-task.ts       # Main task template
+│   ├── example-extract.ts # Data extraction example
+│   ├── example-form.ts   # Form filling example
+│   └── example-agent.ts  # Agent mode example
+└── tmp/                  # Screenshots and temp files
+```
 
 ## Resources
 
-- [Documentation](https://docs.stagehand.dev)
+- [Stagehand Documentation](https://docs.stagehand.dev)
 - [GitHub](https://github.com/browserbase/stagehand)
-- [Stagehand v3 Blog](https://www.browserbase.com/blog/stagehand-v3)
+- [Browserbase](https://www.browserbase.com)
